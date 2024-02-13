@@ -1,0 +1,7 @@
+// my-app-1/eu-west-1/config.json
+{
+  "mongoUri": "mongodb://localhost:27017",
+  "mongoTlsEnabled": false,
+  "mongoTimeoutSeconds": 30
+}
+

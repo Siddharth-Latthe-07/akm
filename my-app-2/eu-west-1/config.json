@@ -1,0 +1,8 @@
+// my-app-1/eu-west-1/config.json
+{
+  "mysqlUri": "mysql://localhost:3306",
+  "mysqlTlsEnabled": true,
+  "mysqlTimeoutSeconds": 45
+}
+
+

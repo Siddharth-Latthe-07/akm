@@ -1,0 +1,2 @@
+# my-app-1/eu-west-1/other_file.txt
+This is some sample text for the EU-West-1 region.

@@ -1,0 +1,5 @@
+{
+  "mongoUri": "mongodb://localhost:27017",
+  "mongoTlsEnabled": false,
+  "mongoTimeoutSeconds": 30
+}

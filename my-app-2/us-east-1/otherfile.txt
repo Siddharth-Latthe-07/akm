@@ -1,0 +1,2 @@
+# my-app-1/us-east-1/other_file.txt
+This is some sample text for the US-East-1 region.
