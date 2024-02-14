@@ -1,70 +1,76 @@
-import os
-import argparse
+import glob
 import boto3
+import os
 
-class SecretsUploader:
-    def __init__(self, region):
-        self.region = region
-        self.client = boto3.client('secretsmanager', region_name=region)
+class Application:
+    def __init__(self, app_name, root_folder):
+        self.name = app_name
+        self.regions = []
+        self.regional_files = {}
+        self.default_files = []
 
-    def upload_secret(self, secret_name, secret_value):
+        for folder_name in glob.glob(f"{root_folder}/*/"):  # Find directories inside root_folder
+            folder_name = folder_name.rstrip('/').split('/')[-1]  # Extract folder name
+            self.regions.append(folder_name)  
+            self.regional_files[folder_name] = []
+            for file_path in glob.glob(f"{root_folder}/{folder_name}/*"):  # Find files inside region folders
+                if os.path.isfile(file_path):
+                    file_name = os.path.basename(file_path)
+                    self.regional_files[folder_name].append({
+                        'path': file_path,
+                        'secret_id': f"{self.name}/{file_name}"  # Modify secret_id construction
+                    })
+
+        # Collect default files from the root folder
+        for file_path in glob.glob(f"{root_folder}/*"):
+            if os.path.isfile(file_path):
+                file_name = os.path.basename(file_path)
+                self.default_files.append({
+                    'path': file_path,
+                    'secret_id': f"{self.name}/{file_name}"  # Modify secret_id construction
+                })
+
+    def upload(self, boto_session_by_region):
+        for region, files in self.regional_files.items():
+            for file_info in files:
+                self.upload_single_file(file_info['path'], file_info['secret_id'], boto_session_by_region[region])
+
+        for file_info in self.default_files:
+            for region, boto_session in boto_session_by_region.items():
+                self.upload_single_file(file_info['path'], file_info['secret_id'], boto_session)
+
+    def upload_single_file(self, file_path, secret_id, boto_session):
         try:
-            response = self.client.describe_secret(SecretId=secret_name)
-            secret_exists = True
-        except self.client.exceptions.ResourceNotFoundException:
-            secret_exists = False
-
-        if secret_exists:
-            response = self.client.put_secret_value(
-                SecretId=secret_name,
-                SecretString=secret_value
-            )
-            print(f"Updated secret '{secret_name}' in {self.region}.")
-        else:
-            response = self.client.create_secret(
-                Name=secret_name,
-                SecretString=secret_value
-            )
-            print(f"Created new secret '{secret_name}' in {self.region}.")
-
-class FolderSyncer:
-    def __init__(self, folder_path):
-        self.folder_path = folder_path
-
-    def sync_folder_to_secrets_manager(self):
-        for root, dirs, files in os.walk(self.folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                # Extract the region from the folder path
-                folder_parts = root.split('/')
-                if len(folder_parts) >= 2:
-                    folder_region = folder_parts[-2]  # Second to last part is the region
-                else:
-                    folder_region = ''
-                application_name = os.path.basename(root)
-                secret_name = f"{application_name}/{file}"
-
-                # If the file path contains a region name, use it, otherwise upload to all specified regions
-                if folder_region:
-                    uploader = SecretsUploader(folder_region)
-                    uploader.upload_secret(secret_name, self.read_file(file_path))
-                else:
-                    regions = [d for d in os.listdir(self.folder_path) if os.path.isdir(os.path.join(self.folder_path, d))]
-                    for region in regions:
-                        uploader = SecretsUploader(region)
-                        uploader.upload_secret(secret_name, self.read_file(file_path))
-
-    def read_file(self, file_path):
-        with open(file_path, 'r') as file:
-            return file.read()
+            client = boto_session.client('secretsmanager')
+            with open(file_path, 'r') as file:
+                secret_value = file.read()
+                client.create_secret(
+                    Name=secret_id,
+                    SecretString=secret_value
+                )
+                print(f"Created new secret '{secret_id}' in {boto_session.region_name}.")
+        except Exception as e:
+            print(f"Error uploading secret '{secret_id}' in {boto_session.region_name}: {str(e)}")
 
 def main():
-    parser = argparse.ArgumentParser(description='Upload files as secrets to AWS Secrets Manager.')
-    parser.add_argument('folder_path', metavar='folder_path', type=str, help='Path to the folder containing files to upload as secrets')
-    args = parser.parse_args()
+    root_folder = "my-apps"
+    apps = []
 
-    folder_syncer = FolderSyncer(args.folder_path)
-    folder_syncer.sync_folder_to_secrets_manager()
+    for app_folder in glob.glob(f"{root_folder}/*/"):  # Find directories inside root_folder
+        app_name = os.path.basename(app_folder.rstrip('/'))  # Extract app name from directory path
+        app = Application(app_name, app_folder)
+        apps.append(app)
+
+    all_regions = set()
+    for app in apps:
+        all_regions.update(app.regions)
+
+    boto_session_by_region = {}
+    for region in all_regions:
+        boto_session_by_region[region] = boto3.Session(region_name=region)
+
+    for app in apps:
+        app.upload(boto_session_by_region)
 
 if __name__ == "__main__":
     main()
